@@ -1,23 +1,28 @@
-﻿{
-  "version": "1.0.0-*",
-  "description": "",
-  "authors": [ "" ],
-  "tags": [ "" ],
-  "projectUrl": "",
-  "licenseUrl": "",
+{
+    "userSecretsId": "aspnet5-FunctionQueues-20150609025458",
+    "version": "1.0.0-*",
+    "description": "",
+    "authors": [ "Oliver C. Baker" ],
+    "tags": [ "" ],
+    "projectUrl": "https://github.com/ocbaker/FunctionQueues",
+    "licenseUrl": "https://github.com/ocbaker/FunctionQueues/blob/master/LICENSE.md",
 
-  "dependencies": {
-  },
+    "dependencies": {
+    },
 
-  "frameworks" : {
-    "dnx451": { },
-    "dnxcore50" : {
-      "dependencies": {
-        "System.Collections": "4.0.10-beta-22816",
-        "System.Linq": "4.0.0-beta-22816",
-        "System.Threading": "4.0.10-beta-22816",
-        "Microsoft.CSharp": "4.0.0-beta-22816"
-      }
+    "frameworks": {
+        "dnx451": { },
+
     }
-  }
-}
+} }
+/*
+
+    
+        "dnxcore50": {
+            "dependencies": {
+                "System.Collections": "4.0.10-beta-22816",
+                "System.Linq": "4.0.0-beta-22816",
+                "System.Threading": "4.0.10-beta-22816",
+                "Microsoft.CSharp": "4.0.0-beta-22816"
+            }
+*/
