@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using FunctionQueues;
@@ -110,6 +111,68 @@ namespace UnitTests
             Console.WriteLine("Min Elasable Time: {0}", delay*5);
             Console.WriteLine("Max Elasable Time: {0}", delay * 10);
         }
+
+        [Test]
+        public async Task CanBatchItems()
+        {
+            var lck = new object();
+            var items = new List<int>();
+            for (int i = 0; i < 100; i++)
+            {
+                items.Add(i);
+            }
+            var cd = new CountdownEvent(100);
+            await items.ProcessBatchWorkAsync(async (ints, @event) =>
+            {
+                foreach (var i in ints)
+                {
+                    lock (lck)
+                    {
+                        cd.Signal();
+                        @event.Signal();
+                    }
+                }
+            },
+                async @event =>
+                {
+                    Console.WriteLine(@event.InitialCount + " " + @event.CurrentCount);
+                    lock (lck)
+                    {
+                        @event.CurrentCount.Should().Be(cd.CurrentCount);
+                    }
+                }, 10);
+            cd.CurrentCount.Should().Be(0);
+        }
+
+        [Test]
+        public async Task CanUseQueueExtensionToQueueWorkAsync()
+        {
+
+            var lck = new object();
+            var items = new List<int>();
+            for (int i = 0; i < 100; i++)
+            {
+                items.Add(i);
+            }
+            var cd = new CountdownEvent(100);
+
+            await _fQueueService.ProcessWorkAsync<FQueueTwoWorkers, int>(items, async i =>
+            {
+                lock (lck)
+                {
+                    cd.Signal();
+                }
+            }, async @event =>
+            {
+                Console.WriteLine(@event.InitialCount + " " + @event.CurrentCount);
+                lock (lck)
+                {
+                    @event.CurrentCount.Should().BeInRange(cd.CurrentCount - 2, cd.CurrentCount + 2);
+                }
+            });
+            cd.CurrentCount.Should().Be(0);
+        }
+
         [Test]
         public async Task CanQueueTenItemsOnTwoWorkersSync()
         {
