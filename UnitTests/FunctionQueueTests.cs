@@ -111,6 +111,39 @@ namespace UnitTests
             Console.WriteLine("Min Elasable Time: {0}", delay*5);
             Console.WriteLine("Max Elasable Time: {0}", delay * 10);
         }
+        [Test]
+        public async Task CanQueueOneHundredItemsOnTwoWorkersAsync()
+        {
+            var lck = new object();
+            var count = 0;
+            var delay = 500;
+            Func<Task> work = (async () =>
+            {
+                //await Task.Delay(delay);
+                lock (lck)
+                {
+                    count++;
+                }
+            });
+
+            var sw = new Stopwatch();
+            sw.Start();
+            var items = new List<Task>();
+            for (int i = 0; i < 100; i++)
+            {
+                items.Add(_fQueueService.AddActionAsync<FQueueTwoWorkers>(work));
+            }
+
+            await Task.WhenAll(
+                items
+                );
+            sw.Stop();
+            count.Should().Be(100);
+            sw.ElapsedMilliseconds.Should().BeLessThan(5000);
+            Console.WriteLine("Elapsed Time: {0}", sw.ElapsedMilliseconds);
+            Console.WriteLine("Min Elasable Time: {0}", delay * 5);
+            Console.WriteLine("Max Elasable Time: {0}", delay * 10);
+        }
 
         [Test]
         public async Task CanBatchItems()
@@ -147,7 +180,6 @@ namespace UnitTests
         [Test]
         public async Task CanUseQueueExtensionToQueueWorkAsync()
         {
-
             var lck = new object();
             var items = new List<int>();
             for (int i = 0; i < 100; i++)
@@ -155,21 +187,44 @@ namespace UnitTests
                 items.Add(i);
             }
             var cd = new CountdownEvent(100);
-
-            await _fQueueService.ProcessWorkAsync<FQueueTwoWorkers, int>(items, async i =>
+            await DoTimedWork(async () =>
             {
-                lock (lck)
+                await _fQueueService.ProcessWorkAsync<FQueueTwoWorkers, int>(items, async i =>
                 {
                     cd.Signal();
-                }
-            }, async @event =>
-            {
-                Console.WriteLine(@event.InitialCount + " " + @event.CurrentCount);
-                lock (lck)
+                }, async @event =>
                 {
+                    Console.WriteLine(@event.InitialCount + " " + @event.CurrentCount);
                     @event.CurrentCount.Should().BeInRange(cd.CurrentCount - 2, cd.CurrentCount + 2);
-                }
+                });
             });
+            
+            cd.CurrentCount.Should().Be(0);
+        }
+        [Test]
+        public async Task CanUseQueueExtensionToQueueVoidWorkAsync()
+        {
+            var lck = new object();
+            var items = new List<int>();
+            var noWork = 100000;
+            for (int i = 0; i < noWork; i++)
+            {
+                items.Add(i);
+            }
+            var cd = new CountdownEvent(noWork);
+            await DoTimedWork(async () =>
+            {
+                await _fQueueService.ProcessWorkAsync<FQueueFourWorkers, int>(items, i =>
+                {
+                    cd.Signal();
+                    //Console.WriteLine(cd.CurrentCount);
+                }, @event =>
+                {
+                    Console.WriteLine(@event.InitialCount + " " + @event.CurrentCount);
+                    //@event.CurrentCount.Should().BeInRange(cd.CurrentCount - 2, cd.CurrentCount + 2);
+                });
+            });
+
             cd.CurrentCount.Should().Be(0);
         }
 
@@ -179,8 +234,6 @@ namespace UnitTests
             var lck = new object();
             var count = 0;
             var delay = 500;
-            var sw = new Stopwatch();
-            sw.Start();
             Func<Task> work = (async () =>
             {
                 await Task.Delay(delay);
@@ -189,21 +242,44 @@ namespace UnitTests
                     count++;
                 }
             });
-            for (int i = 0; i < 10; i++)
+            var sw = await DoTimedWork(async (sw1) =>
             {
-                _fQueueService.AddAction<FQueueTwoWorkers>(work, ex => ex.Should().BeNull());
-            }
-            while (count < 10)
-            {
-                sw.ElapsedMilliseconds.Should().BeLessThan(5000);
-                await Task.Delay(10);
-            }
-            sw.Stop();
-            count.Should().Be(10);
-            sw.ElapsedMilliseconds.Should().BeLessThan(5000);
-            Console.WriteLine("Elapsed Time: {0}", sw.ElapsedMilliseconds);
+                for (int i = 0; i < 10; i++)
+                {
+                    _fQueueService.AddAction<FQueueTwoWorkers>(work, ex => ex.Should().BeNull());
+                }
+                while (count < 10)
+                {
+                    sw1.ElapsedMilliseconds.Should().BeLessThan(5000);
+                    await Task.Delay(10);
+                }
+            });
             Console.WriteLine("Min Elasable Time: {0}", delay * 5);
             Console.WriteLine("Max Elasable Time: {0}", delay * 10);
+            count.Should().Be(10);
+            sw.ElapsedMilliseconds.Should().BeLessThan(5000);
+        }
+
+        async Task<Stopwatch> DoTimedWork(Func<Task> workFunc, bool printElapsedTime = true)
+        {
+            var sw = new Stopwatch();
+            sw.Start();
+            await workFunc();
+            sw.Stop();
+            if(printElapsedTime)
+                Console.WriteLine("Elapsed Time: {0}", sw.ElapsedMilliseconds);
+            return sw;
+        }
+
+        async Task<Stopwatch> DoTimedWork(Func<Stopwatch, Task> workFunc, bool printElapsedTime = true)
+        {
+            var sw = new Stopwatch();
+            sw.Start();
+            await workFunc(sw);
+            sw.Stop();
+            if (printElapsedTime)
+                Console.WriteLine("Elapsed Time: {0}", sw.ElapsedMilliseconds);
+            return sw;
         }
     }
 
@@ -214,5 +290,9 @@ namespace UnitTests
     internal class FQueueTwoWorkers : FQueueBase
     {
         public override int MaxWorkers => 2;
+    }
+    internal class FQueueFourWorkers : FQueueBase
+    {
+        public override int MaxWorkers => 4;
     }
 }

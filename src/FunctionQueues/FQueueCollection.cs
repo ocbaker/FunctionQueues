@@ -9,6 +9,7 @@ namespace FunctionQueues
     {
         object _lock = new object();
         private Exception _internalException;
+        private int _activeWorkers;
 
         private FQueueCollection()
         {
@@ -16,7 +17,12 @@ namespace FunctionQueues
         }
 
         public ConcurrentQueue<FQueueWork> Queue { get; private set; }
-        public int ActiveWorkers { get; private set; }
+        public int ActiveWorkers { get {
+                return _activeWorkers;
+            } private set {
+                Console.WriteLine(_activeWorkers + " -> " + value);
+                _activeWorkers = value;
+            } }
 
         public int MaxWorkers { get; private set; }
         IFQueue QueueType { get; set; }
@@ -40,28 +46,31 @@ namespace FunctionQueues
 
         void TryStartNewWorker()
         {
+            if (ActiveWorkers >= MaxWorkers)
+                return;
             lock (_lock)
             {
-                if (ActiveWorkers >= MaxWorkers)
-                    return;
                 ActiveWorkers++;
-                if (LongRunning)
-                    Task.Factory.StartNew(() => RunQueue(Token), TaskCreationOptions.LongRunning);
-                else
-                    RunQueue(Token);
             }
+            if (LongRunning)
+                Task.Factory.StartNew(() => RunQueue(Token), TaskCreationOptions.LongRunning);
+            else
+                RunQueue(Token);
         }
 
-        FQueueWork GetItem(CancellationToken token)
+        async Task<FQueueWork> GetItem(CancellationToken token)
         {
             FQueueWork request = null;
             while (!token.IsCancellationRequested)
             {
-                var tryDequeue = Queue.TryDequeue(out request);
-                if (tryDequeue)
-                {
-                    return request;
+                if (!Queue.IsEmpty) { 
+                    var tryDequeue = Queue.TryDequeue(out request);
+                    if (tryDequeue)
+                    {
+                        return request;
+                    }
                 }
+                await Task.Delay(1).ConfigureAwait(false);
             }
             return null;
         }
@@ -73,19 +82,25 @@ namespace FunctionQueues
             {
                 while (!token.IsCancellationRequested)
                 {
-                    request = GetItem(new CancellationTokenSource(100).Token);
-                    lock (_lock)
-                    {
-                        if (request == null)
+                    request = await GetItem(new CancellationTokenSource(1000).Token).ConfigureAwait(false);
+                    if (request == null) { 
+                        lock (_lock)
                         {
-                            ActiveWorkers -= 1;
-                            break;
+                            if (ActiveWorkers == 1 && !Queue.IsEmpty && Queue.TryDequeue(out request))
+                            {
+
+                            }
+                            else
+                            {
+                                ActiveWorkers -= 1;
+                                break;
+                            }
                         }
                     }
                     request.State = FQueueState.Processing;
                     try
                     {
-                        await request.Act(token).ConfigureAwait(false);
+                        await request.Act(token);
                     }
                     catch (Exception ex)
                     {

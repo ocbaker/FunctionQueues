@@ -1,7 +1,7 @@
 {
-    "userSecretsId": "aspnet5-FunctionQueues-20150609025458",
+    "userSecretsId": "aspnet5-FunctionQueues-20150609080631",
     "version": "1.0.0-*",
-    "description": "",
+    "description": "Adds some queuing Functionality for type based queues.",
     "authors": [ "Oliver C. Baker" ],
     "tags": [ "" ],
     "projectUrl": "https://github.com/ocbaker/FunctionQueues",
@@ -12,7 +12,7 @@
 
     "frameworks": {
         "dnx451": { },
-        
+
     }
 } }
 /*

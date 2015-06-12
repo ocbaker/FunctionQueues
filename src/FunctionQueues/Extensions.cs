@@ -8,13 +8,19 @@ namespace FunctionQueues
 {
     public static class Extensions
     {
+        public static Task ProcessWorkAsync<TQueue, TObject>(this FunctionQueueService functionQueue,
+            IEnumerable<TObject> work, Action<TObject> workFunc, Action<CountdownEvent> onTick)
+            where TQueue : class, IFQueue, new()
+        {
+            return ProcessWorkAsync<TQueue, TObject>(functionQueue, work, (x) => Task.Run(() => workFunc(x)), (x) => Task.Run(() => onTick(x)));
+        }
         public static async Task ProcessWorkAsync<TQueue, TObject>(this FunctionQueueService functionQueue, IEnumerable<TObject> work, Func<TObject, Task> workFunc, Func<CountdownEvent, Task> onTick)
             where TQueue : class, IFQueue, new()
         {
             Exception exception = null;
             var latch = new CountdownEvent(work.Count());
-            
-            await Task.WhenAll(DoForEachWorkItem(work, (o) =>
+
+            await QueueWorkWithTicker(work, (o) =>
             {
                 functionQueue.AddAction<TQueue>(async () =>
                 {
@@ -22,7 +28,7 @@ namespace FunctionQueues
                     latch.Signal();
                 }, ex => exception = ex);
                 return Task.FromResult<object>(null);
-            }), Ticker(async (l) =>
+            }, Ticker(async (l) =>
             {
                 if (exception != null)
                     throw exception;
@@ -39,13 +45,12 @@ namespace FunctionQueues
         public static async Task ProcessWorkAsync<TObject>(this IEnumerable<TObject> work, Func<TObject, Task> workFunc, Func<CountdownEvent, Task> onTick)
         {
             var latch = new CountdownEvent(work.Count());
-            var i = work.Count();
             
-            await Task.WhenAll(DoForEachWorkItem(work, async (o) =>
+            await QueueWorkWithTicker(work, async (o) =>
             {
                 await workFunc(o).ConfigureAwait(false);
                 latch.Signal();
-            }), Ticker(onTick, latch));
+            }, Ticker(onTick, latch));
         }
 
         private static async Task Ticker(Func<CountdownEvent, Task> onTick, CountdownEvent latch)
@@ -85,6 +90,18 @@ namespace FunctionQueues
                     await Task.Delay(1).ConfigureAwait(false);
                 }
             }), Ticker(onTick, latch));
+        }
+
+        private static async Task QueueWorkWithTicker<TObject>(IEnumerable<TObject> work, Func<TObject, Task> addFunc, Task ticker)
+        {
+            var workl = new List<Task>();
+            workl.Add(ticker);
+
+            foreach (var o in work)
+            {
+                workl.Add(addFunc(o));
+            }
+            await Task.WhenAll(workl);
         }
 
         private static async Task DoForEachWorkItem<TObject>(IEnumerable<TObject> work, Func<TObject, Task> workFunc)
