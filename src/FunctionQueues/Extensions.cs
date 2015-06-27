@@ -14,6 +14,20 @@ namespace FunctionQueues
         {
             return ProcessWorkAsync<TQueue, TObject>(functionQueue, work, (x) => Task.Run(() => workFunc(x)), (x) => Task.Run(() => onTick(x)));
         }
+
+        public static Task ProcessWorkAsync<TQueue, TObject>(this FunctionQueueService functionQueue,
+            IEnumerable<TObject> work, Func<TObject, Task> workFunc, Action<CountdownEvent> onTick)
+            where TQueue : class, IFQueue, new()
+        {
+            return ProcessWorkAsync<TQueue, TObject>(functionQueue, work, workFunc, (x) => Task.Run(() => onTick(x)));
+        }
+        public static Task ProcessWorkAsync<TQueue, TObject>(this FunctionQueueService functionQueue,
+            IEnumerable<TObject> work, Action<TObject> workFunc, Func<CountdownEvent, Task> onTick)
+            where TQueue : class, IFQueue, new()
+        {
+            return ProcessWorkAsync<TQueue, TObject>(functionQueue, work, (x) => Task.Run(() => workFunc(x)), onTick);
+        }
+
         public static async Task ProcessWorkAsync<TQueue, TObject>(this FunctionQueueService functionQueue, IEnumerable<TObject> work, Func<TObject, Task> workFunc, Func<CountdownEvent, Task> onTick)
             where TQueue : class, IFQueue, new()
         {
@@ -22,12 +36,12 @@ namespace FunctionQueues
 
             await QueueWorkWithTicker(work, (o) =>
             {
-                functionQueue.AddAction<TQueue>(async () =>
+                return functionQueue.AddActionAsync<TQueue>(async () =>
                 {
                     await workFunc(o).ConfigureAwait(false);
                     latch.Signal();
-                }, ex => exception = ex);
-                return Task.FromResult<object>(null);
+                });
+                //return Task.FromResult<object>(null);
             }, Ticker(async (l) =>
             {
                 if (exception != null)
@@ -41,6 +55,16 @@ namespace FunctionQueues
         {
             return ProcessWorkAsync(work, (x) => Task.Run(() => workFunc(x)), (x) => Task.Run(() => onTick(x)));
         }
+        public static Task ProcessWorkAsync<TObject>(this IEnumerable<TObject> work, Func<TObject, Task> workFunc,
+            Action<CountdownEvent> onTick)
+        {
+            return ProcessWorkAsync(work, workFunc, (x) => Task.Run(() => onTick(x)));
+        }
+        public static Task ProcessWorkAsync<TObject>(this IEnumerable<TObject> work, Action<TObject> workFunc,
+            Func<CountdownEvent, Task> onTick)
+        {
+            return ProcessWorkAsync(work, (x) => Task.Run(() => workFunc(x)), onTick);
+        }
 
         public static async Task ProcessWorkAsync<TObject>(this IEnumerable<TObject> work, Func<TObject, Task> workFunc, Func<CountdownEvent, Task> onTick)
         {
@@ -53,15 +77,24 @@ namespace FunctionQueues
             }, Ticker(onTick, latch));
         }
 
-        private static async Task Ticker(Func<CountdownEvent, Task> onTick, CountdownEvent latch)
+        public static Task ProcessBatchWorkAsync<TObject>(this IEnumerable<TObject> work,
+            Action<IEnumerable<TObject>, CountdownEventSub> workFunc, Action<CountdownEvent> onTick,
+            int maxBatchSize)
         {
-            while (latch.CurrentCount != 0)
-            {
-                await onTick(latch).ConfigureAwait(false);
-                await Task.Delay(100).ConfigureAwait(false);
-            }
+            return ProcessBatchWorkAsync(work, (objects, sub) => Task.Run(() => workFunc(objects, sub)), @event => Task.Run(() => onTick(@event)), maxBatchSize);
         }
-
+        public static Task ProcessBatchWorkAsync<TObject>(this IEnumerable<TObject> work,
+           Func<IEnumerable<TObject>, CountdownEventSub, Task> workFunc, Action<CountdownEvent> onTick,
+           int maxBatchSize)
+        {
+            return ProcessBatchWorkAsync(work, workFunc, @event => Task.Run(() => onTick(@event)), maxBatchSize);
+        }
+        public static Task ProcessBatchWorkAsync<TObject>(this IEnumerable<TObject> work,
+           Action<IEnumerable<TObject>, CountdownEventSub> workFunc, Func<CountdownEvent, Task> onTick,
+           int maxBatchSize)
+        {
+            return ProcessBatchWorkAsync(work, (objects, sub) => Task.Run(() => workFunc(objects, sub)), onTick, maxBatchSize);
+        }
         public static async Task ProcessBatchWorkAsync<TObject>(this IEnumerable<TObject> work, Func<IEnumerable<TObject>, CountdownEventSub, Task> workFunc, Func<CountdownEvent, Task> onTick, int maxBatchSize)
         {
             var items = new List<List<TObject>>();
@@ -90,6 +123,15 @@ namespace FunctionQueues
                     await Task.Delay(1).ConfigureAwait(false);
                 }
             }), Ticker(onTick, latch));
+        }
+
+        private static async Task Ticker(Func<CountdownEvent, Task> onTick, CountdownEvent latch)
+        {
+            while (latch.CurrentCount != 0)
+            {
+                await onTick(latch).ConfigureAwait(false);
+                await Task.Delay(100).ConfigureAwait(false);
+            }
         }
 
         private static async Task QueueWorkWithTicker<TObject>(IEnumerable<TObject> work, Func<TObject, Task> addFunc, Task ticker)

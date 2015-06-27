@@ -20,7 +20,7 @@ namespace FunctionQueues
         public int ActiveWorkers { get {
                 return _activeWorkers;
             } private set {
-                Console.WriteLine(_activeWorkers + " -> " + value);
+                //Console.WriteLine(_activeWorkers + " -> " + value);
                 _activeWorkers = value;
             } }
 
